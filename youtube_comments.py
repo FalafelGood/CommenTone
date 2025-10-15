@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""
+YouTube Comments Fetcher
+
+A Python script that uses the official YouTube Data API v3 to fetch all comments
+from a YouTube video by its video ID.
+
+Requirements:
+- Google API key
+- google-api-python-client library
+- requests library
+
+Usage:
+    python youtube_comments.py --video-id VIDEO_ID --api-key YOUR_API_KEY
+"""
+
+import json
+import sys
+import time
+import logging
+from typing import List, Dict, Optional
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+# import os
+
+class YouTubeCommentsFetcher:
+    """Fetches comments from YouTube videos using the YouTube Data API v3."""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the YouTubeCommentsFetcher.
+        
+        Args:
+            api_key: YouTube Data API key
+        """
+        self.api_key = api_key
+        self.youtube = None # Discovery document
+        self._initialize_api()
+    
+    def _initialize_api(self):
+        """Initialize the YouTube API client."""
+        try:
+            if self.api_key:
+                self.youtube = build('youtube', 'v3', developerKey=self.api_key)
+            else:
+                raise ValueError("api_key must be provided")
+                
+        except Exception as e:
+            print(f"Error initializing YouTube API: {e}")
+            sys.exit(1)
+    
+    def get_video_info(self, video_id: str) -> Dict:
+        """
+        Get basic information about the video.
+        
+        Args:
+            video_id: YouTube video ID
+            
+        Returns:
+            Dictionary containing video information
+        """
+        try:
+            request = self.youtube.videos().list(
+                part='snippet,statistics',
+                id=video_id
+            )
+            response = request.execute()
+            
+            if not response['items']:
+                return None
+            
+            video = response['items'][0]
+            return {
+                'title': video['snippet']['title'],
+                'channel': video['snippet']['channelTitle'],
+                'view_count': video['statistics'].get('viewCount', 0),
+                'like_count': video['statistics'].get('likeCount', 0),
+                'comment_count': video['statistics'].get('commentCount', 0)
+            }
+        except HttpError as e:
+            print(f"Error fetching video info: {e}")
+            return None
+    
+    def get_all_comments(self, video_id: str, max_results: int = 100) -> List[Dict]:
+        """
+        Fetch all comments from a YouTube video.
+        
+        Args:
+            video_id: YouTube video ID
+            max_results: Maximum number of comments to fetch per request (max 100)
+            
+        Returns:
+            List of comment dictionaries
+        """
+        all_comments = []
+        next_page_token = None
+        
+        print(f"Fetching comments for video ID: {video_id}")
+        
+        try:
+            while True:
+                # Get top-level comments
+                request = self.youtube.commentThreads().list(
+                    part='snippet,replies',
+                    videoId=video_id,
+                    maxResults=min(max_results, 100),
+                    pageToken=next_page_token,
+                    order='time'  # You can change this to 'relevance' or 'time'
+                )
+                
+                response = request.execute()
+                
+                for item in response['items']:
+                    comment = self._extract_comment_data(item)
+                    all_comments.append(comment)
+                    
+                    # Get replies to this comment
+                    if 'replies' in item:
+                        for reply in item['replies']['comments']:
+                            reply_data = self._extract_reply_data(reply, comment['id'])
+                            all_comments.append(reply_data)
+                
+                # Check if there are more pages
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token:
+                    break
+                
+                # Rate limiting - YouTube API has quotas
+                time.sleep(0.1)
+                
+        except HttpError as e:
+            if e.resp.status == 403:
+                print("Error: API quota exceeded or access denied. Please check your API key and quota.")
+            elif e.resp.status == 404:
+                print("Error: Video not found or comments disabled.")
+            else:
+                print(f"Error fetching comments: {e}")
+            return all_comments
+        
+        print(f"Successfully fetched {len(all_comments)} comments")
+        return all_comments
+    
+    def _extract_comment_data(self, item: Dict) -> Dict:
+        """Extract comment data from API response."""
+        snippet = item['snippet']['topLevelComment']['snippet']
+        return {
+            'id': item['snippet']['topLevelComment']['id'],
+            'parent_id': None,
+            'author': snippet['authorDisplayName'],
+            'author_channel_id': snippet.get('authorChannelId', {}).get('value'),
+            'text': snippet['textDisplay'],
+            'like_count': snippet['likeCount'],
+            'published_at': snippet['publishedAt'],
+            'updated_at': snippet['updatedAt'],
+            'is_reply': False
+        }
+    
+    def _extract_reply_data(self, reply: Dict, parent_id: str) -> Dict:
+        """Extract reply data from API response."""
+        snippet = reply['snippet']
+        return {
+            'id': reply['id'],
+            'parent_id': parent_id,
+            'author': snippet['authorDisplayName'],
+            'author_channel_id': snippet.get('authorChannelId', {}).get('value'),
+            'text': snippet['textDisplay'],
+            'like_count': snippet['likeCount'],
+            'published_at': snippet['publishedAt'],
+            'updated_at': snippet['updatedAt'],
+            'is_reply': True
+        }
+    
+    def save_comments_to_file(self, comments: List[Dict], filename: str):
+        """
+        Save comments to a JSON file.
+        
+        Args:
+            comments: List of comment dictionaries
+            filename: Output filename
+        """
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(comments, f, indent=2, ensure_ascii=False)
+            print(f"Comments saved to {filename}")
+        except Exception as e:
+            print(f"Error saving comments: {e}")
+
+def get_video_comments(video_id: str, max_results: Optional[int] = 100):
+    try:
+        from config import YOUTUBE_API_KEY
+    except ImportError:
+        print("Error: YOUTUBE_API_KEY not found in config.py")
+        sys.exit(1)
+    
+    # Initialize the fetcher
+    fetcher = YouTubeCommentsFetcher(
+        api_key=YOUTUBE_API_KEY
+    )
+
+    print("Fetching video information...")
+    video_info = fetcher.get_video_info(video_id)
+    if video_info:
+        print(f"Video: {video_info['title']}")
+        print(f"Channel: {video_info['channel']}")
+        print(f"Views: {video_info['view_count']}")
+        print(f"Likes: {video_info['like_count']}")
+        print(f"Comments: {video_info['comment_count']}")
+        print("-" * 50)
+
+    # Fetch all comments
+    comments = fetcher.get_all_comments(video_id, max_results)
+    
+    if comments:        
+        # Log summary
+        print(f"\nSummary:")
+        print(f"Total comments fetched: {len(comments)}")
+        print(f"Top-level comments: {len([c for c in comments if not c['is_reply']])}")
+        print(f"Replies: {len([c for c in comments if c['is_reply']])}")
+
+        return comments
+    else:
+        print("No comments found or error occurred.")
+
+
+if __name__ == '__main__':
+    print("Running tests for youtube_comments.py")
+    comments = get_video_comments(video_id="17AhCNBljME")
+    for comment in comments:
+        print(comment['text'])
+
