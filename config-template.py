@@ -6,7 +6,7 @@ Configuration file setup:
 (See https://console.developers.google.com/ for more info)
 """
 
-YOUTUBE_API_KEY = "AIzaSyB3x6MoGwipU6R6-86At-DD_UzhWTYA7iU"
+YOUTUBE_API_KEY = "Your API Key here"
 
 
 
