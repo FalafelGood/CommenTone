@@ -23,6 +23,9 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 # import os
 
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 class YouTubeCommentsFetcher:
     """Fetches comments from YouTube videos using the YouTube Data API v3."""
     
@@ -46,7 +49,7 @@ class YouTubeCommentsFetcher:
                 raise ValueError("api_key must be provided")
                 
         except Exception as e:
-            print(f"Error initializing YouTube API: {e}")
+            logger.error(f" Error initializing YouTube API: {e}")
             sys.exit(1)
     
     def get_video_info(self, video_id: str) -> Dict:
@@ -78,7 +81,7 @@ class YouTubeCommentsFetcher:
                 'comment_count': video['statistics'].get('commentCount', 0)
             }
         except HttpError as e:
-            print(f"Error fetching video info: {e}")
+            logger.error(f"Error fetching video info: {e}")
             return None
     
     def get_all_comments(self, video_id: str, max_results: int = 100) -> List[Dict]:
@@ -95,7 +98,7 @@ class YouTubeCommentsFetcher:
         all_comments = []
         next_page_token = None
         
-        print(f"Fetching comments for video ID: {video_id}")
+        logger.info(f"Fetching comments for video ID: {video_id}")
         
         try:
             while True:
@@ -130,14 +133,14 @@ class YouTubeCommentsFetcher:
                 
         except HttpError as e:
             if e.resp.status == 403:
-                print("Error: API quota exceeded or access denied. Please check your API key and quota.")
+                logger.error("API quota exceeded or access denied. Please check your API key and quota.")
             elif e.resp.status == 404:
-                print("Error: Video not found or comments disabled.")
+                logger.error("Video not found or comments disabled.")
             else:
-                print(f"Error fetching comments: {e}")
+                logger.error(f"Error fetching comments: {e}")
             return all_comments
         
-        print(f"Successfully fetched {len(all_comments)} comments")
+        logger.info(f"Successfully fetched {len(all_comments)} comments")
         return all_comments
     
     def _extract_comment_data(self, item: Dict) -> Dict:
@@ -181,15 +184,19 @@ class YouTubeCommentsFetcher:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(comments, f, indent=2, ensure_ascii=False)
-            print(f"Comments saved to {filename}")
+            logger.info(f"Comments saved to {filename}")
         except Exception as e:
-            print(f"Error saving comments: {e}")
+            logger.error(f"Error saving comments: {e}")
+
 
 def get_video_comments(video_id: str, max_results: Optional[int] = 100):
+
+
     try:
         from config import YOUTUBE_API_KEY
     except ImportError:
-        print("Error: YOUTUBE_API_KEY not found in config.py")
+        print("YOUTUBE_API_KEY not found in config.py", ImportError)
+        print("Have you configured your API key? Follow the instructions in config-template.py for more info")
         sys.exit(1)
     
     # Initialize the fetcher
@@ -197,34 +204,23 @@ def get_video_comments(video_id: str, max_results: Optional[int] = 100):
         api_key=YOUTUBE_API_KEY
     )
 
-    print("Fetching video information...")
-    video_info = fetcher.get_video_info(video_id)
-    if video_info:
-        print(f"Video: {video_info['title']}")
-        print(f"Channel: {video_info['channel']}")
-        print(f"Views: {video_info['view_count']}")
-        print(f"Likes: {video_info['like_count']}")
-        print(f"Comments: {video_info['comment_count']}")
-        print("-" * 50)
-
     # Fetch all comments
     comments = fetcher.get_all_comments(video_id, max_results)
-    
-    if comments:        
-        # Log summary
-        print(f"\nSummary:")
-        print(f"Total comments fetched: {len(comments)}")
-        print(f"Top-level comments: {len([c for c in comments if not c['is_reply']])}")
-        print(f"Replies: {len([c for c in comments if c['is_reply']])}")
-
+    if comments:
         return comments
     else:
-        print("No comments found or error occurred.")
+        print("WARNING: No comments were found, or some other error occoured.")
+
 
 
 if __name__ == '__main__':
-    print("Running tests for youtube_comments.py")
+    """
+    A simple unit test: This should get the comments from one of my videos and log them in a seperate file.
+    """
+    from setup_logging import setup_logging
+    logger = setup_logging()
+    logger.info(" Running unit test for youtube_comments.py")
     comments = get_video_comments(video_id="17AhCNBljME")
     for comment in comments:
-        print(comment['text'])
+        logger.debug(comment['text'])
 

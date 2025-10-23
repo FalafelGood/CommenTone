@@ -13,8 +13,11 @@ sia = SentimentIntensityAnalyzer()
 
 def get_polarity_scores(comment):
   scores = sia.polarity_scores(comment)
-  print(f"Comment: \"{comment}\" has polarity score of: {scores} ")
+  # print(f"Comment: \"{comment}\" has polarity score of: {scores} ")
   return scores
 
-# scores = sia.polarity_scores("Hello world!")
-# print(scores)
+
+if __name__ == '__main__':
+  comment = "Whitelist is a cool channel. Jesus is the Messiah."
+  scores = get_polarity_scores(comment)
+  print(f"comment: {comment} -- polarity scores: {scores}")

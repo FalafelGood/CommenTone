@@ -18,9 +18,13 @@ import json
 import sys
 import time
 import re
+import logging
 from typing import List, Dict, Optional
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 class YouTubeChannelVideoFetcher:
@@ -46,7 +50,7 @@ class YouTubeChannelVideoFetcher:
                 raise ValueError("api_key must be provided")
                 
         except Exception as e:
-            print(f"Error initializing YouTube API: {e}")
+            logger.error(f"Error initializing YouTube API: {e}")
             sys.exit(1)
     
     def get_channel_id_from_username(self, username: str) -> Optional[str]:
@@ -59,6 +63,7 @@ class YouTubeChannelVideoFetcher:
         Returns:
             Channel ID if found, None otherwise
         """
+        logger.info(f"Getting channel ID for username \"{username}\"")
         try:
             # Handle different URL formats
             if username.startswith('@'):
@@ -115,7 +120,7 @@ class YouTubeChannelVideoFetcher:
                         return response['items'][0]['id']
                         
         except HttpError as e:
-            print(f"Error fetching channel ID: {e}")
+            logger.error(f"Error fetching channel ID: {e}")
             
         return None
     
@@ -151,7 +156,7 @@ class YouTubeChannelVideoFetcher:
                 'view_count': channel['statistics'].get('viewCount', 0)
             }
         except HttpError as e:
-            print(f"Error fetching channel info: {e}")
+            logger.error(f"Error fetching channel info: {e}")
             return None
     
     def get_all_video_ids(self, channel_id: str, max_results: int = 50) -> List[str]:
@@ -168,7 +173,7 @@ class YouTubeChannelVideoFetcher:
         all_video_ids = []
         next_page_token = None
         
-        print(f"Fetching videos for channel ID: {channel_id}")
+        logger.info(f"Fetching videos for channel ID: {channel_id}")
         
         try:
             while True:
@@ -199,17 +204,17 @@ class YouTubeChannelVideoFetcher:
                 
                 # Progress indicator
                 if len(all_video_ids) % 100 == 0:
-                    print(f"Fetched {len(all_video_ids)} video IDs so far...")
+                    logger.info(f"Fetched {len(all_video_ids)} video IDs so far...")
                 
         except HttpError as e:
             if e.resp.status == 403:
-                print("Error: API quota exceeded or access denied. Please check your API key and quota.")
+                logger.error("Error: API quota exceeded or access denied. Please check your API key and quota.")
             elif e.resp.status == 404:
-                print("Error: Channel not found.")
+                logger.error("Error: Channel not found.")
             else:
-                print(f"Error fetching videos: {e}")
+                logger.error(f"Error fetching videos: {e}")
         
-        print(f"Successfully fetched {len(all_video_ids)} video IDs")
+        logger.info(f"Successfully fetched {len(all_video_ids)} video IDs")
         return all_video_ids
     
     def get_video_details(self, video_ids: List[str]) -> List[Dict]:
@@ -254,7 +259,7 @@ class YouTubeChannelVideoFetcher:
                 time.sleep(0.1)
                 
             except HttpError as e:
-                print(f"Error fetching video details for batch: {e}")
+                logger.error(f"Error fetching video details for batch: {e}")
                 continue
         
         return video_details
@@ -271,9 +276,9 @@ class YouTubeChannelVideoFetcher:
             with open(filename, 'w', encoding='utf-8') as f:
                 for video_id in video_ids:
                     f.write(f"{video_id}\n")
-            print(f"Video IDs saved to {filename}")
+            logger.info(f"Video IDs saved to {filename}")
         except Exception as e:
-            print(f"Error saving video IDs: {e}")
+            logger.error(f"Error saving video IDs: {e}")
     
     def save_video_details_to_file(self, video_details: List[Dict], filename: str):
         """
@@ -286,9 +291,9 @@ class YouTubeChannelVideoFetcher:
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(video_details, f, indent=2, ensure_ascii=False)
-            print(f"Video details saved to {filename}")
+            logger.info(f"Video details saved to {filename}")
         except Exception as e:
-            print(f"Error saving video details: {e}")
+            logger.error(f"Error saving video details: {e}")
 
 
 def get_channel_videos(channel_identifier: str, output_ids_file: Optional[str] = None, 
@@ -307,37 +312,27 @@ def get_channel_videos(channel_identifier: str, output_ids_file: Optional[str] =
     try:
         from config import YOUTUBE_API_KEY
     except ImportError:
-        print("Error: YOUTUBE_API_KEY not found in config.py")
+        logger.error("Error: YOUTUBE_API_KEY not found in config.py")
         sys.exit(1)
     
     # Initialize the fetcher
     fetcher = YouTubeChannelVideoFetcher(api_key=YOUTUBE_API_KEY)
     
     # Get channel ID
-    print("Resolving channel identifier...")
+    logger.info("Resolving channel identifier...")
     channel_id = fetcher.get_channel_id_from_username(channel_identifier)
     
     if not channel_id:
-        print(f"Error: Could not find channel with identifier: {channel_identifier}")
+        logger.error(f"Error: Could not find channel with identifier: {channel_identifier}")
         sys.exit(1)
     
-    print(f"Found channel ID: {channel_id}")
-    
-    # Get channel information
-    print("Fetching channel information...")
-    channel_info = fetcher.get_channel_info(channel_id)
-    if channel_info:
-        print(f"Channel: {channel_info['title']}")
-        print(f"Subscribers: {channel_info['subscriber_count']}")
-        print(f"Total videos: {channel_info['video_count']}")
-        print(f"Total views: {channel_info['view_count']}")
-        print("-" * 50)
+    logger.info(f"Found channel ID: {channel_id}")
     
     # Fetch all video IDs
     video_ids = fetcher.get_all_video_ids(channel_id, max_results)
     
     if not video_ids:
-        print("No videos found or error occurred.")
+        logger.warning("No videos found or error occurred.")
         return
     
     # Save video IDs if requested
@@ -346,42 +341,38 @@ def get_channel_videos(channel_identifier: str, output_ids_file: Optional[str] =
     
     # Get video details if requested
     if include_details:
-        print("Fetching video details...")
+        logger.info("Fetching video details...")
         video_details = fetcher.get_video_details(video_ids)
         
         if output_details_file:
             fetcher.save_video_details_to_file(video_details, output_details_file)
     
-    # Print summary
-    print(f"\nSummary:")
-    print(f"Total videos found: {len(video_ids)}")
     if include_details:
-        print(f"Video details fetched: {len(video_details)}")
+        logger.info(f"Video details fetched: {len(video_details)}")
     
     return video_ids
 
 
 def main():
-    """Example usage of the YouTube Channel Video Fetcher."""
-    # Example: Get videos from a channel
-    # You can use channel ID, username, or URL
-    # channel_identifier = "UCBJycsmduvYEL83R_U4JriQ"  # Example channel ID
-    channel_identifier = "@whitelist-media"  # Example handle
-    # channel_identifier = "https://www.youtube.com/@mkbhd"  # Example URL
+    pass
+
+
+if __name__ == '__main__':
+    """Unit test: Get all the video ids from my channel"""
+
+    from setup_logging import setup_logging
+    logger = setup_logging()
+    logger.info(" Running unit test for youtube_comments.py")
+
+    channel_identifier = "@whitelist-media"
     
     video_ids = get_channel_videos(
         channel_identifier=channel_identifier,
-        output_ids_file="channel_video_ids.txt",
-        output_details_file="channel_video_details.json",
         include_details=True,
         max_results=50
     )
     
     if video_ids:
-        print(f"\nFirst 10 video IDs:")
+        logger.info(f"\nFirst 10 video IDs:")
         for i, video_id in enumerate(video_ids[:10]):
-            print(f"{i+1}. {video_id}")
-
-
-if __name__ == '__main__':
-    main()
+            logger.info(f"{i+1}. {video_id}")
