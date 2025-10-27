@@ -84,13 +84,13 @@ class YouTubeCommentsFetcher:
             logger.error(f"Error fetching video info: {e}")
             return None
     
-    def get_all_comments(self, video_id: str, max_results: int = 100) -> List[Dict]:
+    def get_all_comments(self, video_id: str, max_results_per_query: int = 100) -> List[Dict]:
         """
         Fetch all comments from a YouTube video.
         
         Args:
             video_id: YouTube video ID
-            max_results: Maximum number of comments to fetch per request (max 100)
+            max_results_per_query: Maximum number of comments to fetch per request (max 100)
             
         Returns:
             List of comment dictionaries
@@ -102,13 +102,16 @@ class YouTubeCommentsFetcher:
         
         try:
             while True:
+
+                logger.info(f"  Querying for up to {max_results_per_query} top level comments...")
+
                 # Get top-level comments
                 request = self.youtube.commentThreads().list(
                     part='snippet,replies',
                     videoId=video_id,
-                    maxResults=min(max_results, 100),
+                    maxResults=min(max_results_per_query, 100),
                     pageToken=next_page_token,
-                    order='time'  # You can change this to 'relevance' or 'time'
+                    order='relevance'  # You can change this to 'relevance' or 'time'
                 )
                 
                 response = request.execute()
@@ -189,9 +192,7 @@ class YouTubeCommentsFetcher:
             logger.error(f"Error saving comments: {e}")
 
 
-def get_video_comments(video_id: str, max_results: Optional[int] = 100):
-
-
+def get_video_comments(video_id: str):
     try:
         from config import YOUTUBE_API_KEY
     except ImportError:
@@ -205,7 +206,7 @@ def get_video_comments(video_id: str, max_results: Optional[int] = 100):
     )
 
     # Fetch all comments
-    comments = fetcher.get_all_comments(video_id, max_results)
+    comments = fetcher.get_all_comments(video_id)
     if comments:
         return comments
     else:
