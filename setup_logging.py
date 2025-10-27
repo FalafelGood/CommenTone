@@ -15,7 +15,7 @@ def setup_logging():
     level=logging.DEBUG,
     handlers=[
       logging.FileHandler(log_filename, encoding='utf-8'),
-      # Uncomment to also log to console
+      # Uncomment to also log to console (don't forget to import sys)
       logging.StreamHandler(sys.stdout) 
     ]
   )
@@ -27,5 +27,5 @@ def setup_logging():
 
   # Create instance of module-level logger
   logger = logging.getLogger(__name__)
-  logger.info(f"Logger initialized. Log file: {log_filename}")
+  logger.info(f"  Logger initialized. Log file: {log_filename}")
   return logger

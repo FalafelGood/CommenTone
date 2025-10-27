@@ -23,6 +23,9 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 # import os
 
+# Maximum number of comments threads requested per API query
+MAX_QUERY_SIZE = 100 
+
 # Module-level logger
 logger = logging.getLogger(__name__)
 
@@ -84,13 +87,12 @@ class YouTubeCommentsFetcher:
             logger.error(f"Error fetching video info: {e}")
             return None
     
-    def get_all_comments(self, video_id: str, max_results_per_query: int = 100) -> List[Dict]:
+    def get_all_comments(self, video_id: str) -> List[Dict]:
         """
         Fetch all comments from a YouTube video.
         
         Args:
             video_id: YouTube video ID
-            max_results_per_query: Maximum number of comments to fetch per request (max 100)
             
         Returns:
             List of comment dictionaries
@@ -103,13 +105,13 @@ class YouTubeCommentsFetcher:
         try:
             while True:
 
-                logger.info(f"  Querying for up to {max_results_per_query} top level comments...")
+                logger.info(f"  Querying for up to {MAX_QUERY_SIZE} top level comments...")
 
-                # Get top-level comments
+                # Fetch a list of comment THREADS (not individual comments)
                 request = self.youtube.commentThreads().list(
                     part='snippet,replies',
                     videoId=video_id,
-                    maxResults=min(max_results_per_query, 100),
+                    maxResults=MAX_QUERY_SIZE,
                     pageToken=next_page_token,
                     order='relevance'  # You can change this to 'relevance' or 'time'
                 )
@@ -143,7 +145,81 @@ class YouTubeCommentsFetcher:
                 logger.error(f"Error fetching comments: {e}")
             return all_comments
         
-        logger.info(f"Successfully fetched {len(all_comments)} comments")
+        logger.info(f"  Successfully fetched {len(all_comments)} comments")
+        return all_comments
+    
+    def get_comments(self, video_id: str, max_comments: int) -> List[Dict]:
+        """
+        Fetch comments from a YouTube video up to a specified maximum.
+        
+        Args:
+            video_id: YouTube video ID
+            max_comments: Maximum number of comments to fetch
+            
+        Returns:
+            List of comment dictionaries (up to max_comments)
+        """
+        all_comments = []
+        len_all_comments = 0
+        next_page_token = None
+        
+        logger.info(f"  Fetching up to {max_comments} comments for video ID: {video_id}")
+        
+        try:
+            while len_all_comments < max_comments:
+                # Calculate how many comments we still need
+                remaining = max_comments - len_all_comments
+                current_batch_size = min(MAX_QUERY_SIZE, remaining)
+                
+                logger.info(f"  Querying for up to {current_batch_size} top level comments...")
+
+                # Fetch a list of comment THREADS (not individual comments)
+                request = self.youtube.commentThreads().list(
+                    part='snippet,replies',
+                    videoId=video_id,
+                    maxResults=current_batch_size,
+                    pageToken=next_page_token,
+                    order='relevance'  # You can change this to 'relevance' or 'time'
+                )
+                
+                response = request.execute()
+                
+                for item in response['items']:
+                    # Stop if we've reached the maximum
+                    if len_all_comments >= max_comments:
+                        break
+                        
+                    comment = self._extract_comment_data(item)
+                    all_comments.append(comment)
+                    len_all_comments += 1
+                    
+                    # Get replies to this comment (if we haven't reached the limit)
+                    if 'replies' in item and len(all_comments) < max_comments:
+                        for reply in item['replies']['comments']:
+                            if len_all_comments >= max_comments:
+                                break
+                            reply_data = self._extract_reply_data(reply, comment['id'])
+                            all_comments.append(reply_data)
+                            len_all_comments += 1
+                
+                # Check if there are more pages and we haven't reached our limit
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token or len_all_comments >= max_comments:
+                    break
+                
+                # Rate limiting - YouTube API has quotas
+                time.sleep(0.1)
+                
+        except HttpError as e:
+            if e.resp.status == 403:
+                logger.error("  API quota exceeded or access denied. Please check your API key and quota.")
+            elif e.resp.status == 404:
+                logger.error("  Video not found or comments disabled.")
+            else:
+                logger.error(f"  Error fetching comments: {e}")
+            return all_comments
+        
+        logger.info(f"  Successfully fetched {len_all_comments} comments (requested up to {max_comments})")
         return all_comments
     
     def _extract_comment_data(self, item: Dict) -> Dict:
@@ -192,7 +268,7 @@ class YouTubeCommentsFetcher:
             logger.error(f"Error saving comments: {e}")
 
 
-def get_video_comments(video_id: str):
+def get_video_comments(video_id: str, max_comments: int = 500):
     try:
         from config import YOUTUBE_API_KEY
     except ImportError:
@@ -206,12 +282,11 @@ def get_video_comments(video_id: str):
     )
 
     # Fetch all comments
-    comments = fetcher.get_all_comments(video_id)
+    comments = fetcher.get_comments(video_id, max_comments=max_comments)
     if comments:
         return comments
     else:
-        print("WARNING: No comments were found, or some other error occoured.")
-
+        print(f"WARNING: No comments were retrieved on video {video_id}.")
 
 
 if __name__ == '__main__':
@@ -220,8 +295,9 @@ if __name__ == '__main__':
     """
     from setup_logging import setup_logging
     logger = setup_logging()
-    logger.info(" Running unit test for youtube_comments.py")
-    comments = get_video_comments(video_id="17AhCNBljME")
+    logger.info("  Running unit test for youtube_comments.py")
+    # comments = get_video_comments(video_id="17AhCNBljME") # small example
+    comments = get_video_comments(video_id="dQw4w9WgXcQ", max_comments=25) # big example
     for comment in comments:
-        logger.debug(comment['text'])
+        logger.debug(f"  Comment: \"{comment['text']}\"")
 

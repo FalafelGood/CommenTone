@@ -26,7 +26,7 @@ def rate_channel_by_comments(channel_id: str, max_comments_per_vid = 100, max_vi
 
   # Limit to max_vids videos
   for video_id in videos[:max_vids]:
-    comments = get_video_comments(video_id)
+    comments = get_video_comments(video_id, max_comments=1000)
     if comments:
       for comment in comments:
       # for comment in comments[:max_comments_per_vid]:
@@ -34,14 +34,8 @@ def rate_channel_by_comments(channel_id: str, max_comments_per_vid = 100, max_vi
         like_count = comment['like_count']
         scores.add_score(score, like_count)
 
-  weighted_average_scores = scores.weighted_average_scores()
-  # average_scores = scores.average_scores()
-  # score_varience = scores.score_variances()
-  # print(average_scores)
-  # print(score_varience)
-  print(weighted_average_scores)
-  print(f"Kindness: {scores.kindness()}")
-  print(f"Volatility: {scores.volatility()}")
+  print(f"Channel Kindness: {scores.kindness()}")
+  print(f"Channel Volatility: {scores.volatility()}")
 
 
 if __name__ == '__main__':
